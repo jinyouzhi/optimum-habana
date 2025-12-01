@@ -376,7 +376,6 @@ def usp_dit_forward_multitalk(
             else:
                 rescale_func = np.poly1d(self.coefficients)
                 self.accumulated_rel_l1_distance_cond += rescale_func(((modulated_inp-self.previous_e0_cond).abs().mean() / self.previous_e0_cond.abs().mean()).cpu().item())
-                # print("accumulated_rel_l1_distance_even", self.accumulated_rel_l1_distance_even)
                 if self.accumulated_rel_l1_distance_cond < self.teacache_thresh:
                     should_calc_cond = False
                 else:
@@ -503,7 +502,6 @@ def usp_attn_forward_multitalk(self,
     k = get_sp_group().all_gather(k, dim=1)
     v = get_sp_group().all_gather(v, dim=1)
 
-    # x = attention(half(q),half(k),half(v),)
     x = self.fav3.forward(half(q), half(k), half(v), cp_size=get_sequence_parallel_world_size(), layout_head_first=False)
     htcore.mark_step()
 
