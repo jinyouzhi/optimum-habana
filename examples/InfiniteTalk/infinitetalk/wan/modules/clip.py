@@ -84,8 +84,6 @@ class SelfAttention(nn.Module):
 
         # compute attention
         p = self.attn_dropout if self.training else 0.0
-
-        # compute attention
         x = self.fav3.forward(q, k, v, layout_head_first=False)
         htcore.mark_step()
 
@@ -547,6 +545,5 @@ class CLIPModel:
         videos = self.transforms.transforms[-1](videos.mul_(0.5).add_(0.5))
 
         # forward
-        # with torch.cuda.amp.autocast(dtype=self.dtype):
         out = self.model.visual(videos.to(dtype=self.dtype), use_31_block=True)
         return out

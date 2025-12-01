@@ -41,6 +41,7 @@ def sinusoidal_embedding_1d(dim, position):
     x = torch.cat([torch.cos(sinusoid), torch.sin(sinusoid)], dim=1)
     return x
 
+
 @amp.autocast(enabled=False)
 def rope_params(max_seq_len, dim, theta=10000):
 
@@ -71,6 +72,7 @@ def rope_params_gaudi(max_seq_len, dim, theta=10000):
 @amp.autocast(enabled=False)
 def rope_apply(x, grid_sizes, freqs):
     s, n, c = x.size(1), x.size(2), x.size(3) // 2
+
     freqs = freqs.split([c - 2 * (c // 3), c // 3, c // 3], dim=1)
 
     output = []
@@ -254,11 +256,9 @@ class WanI2VCrossAttention(WanSelfAttention):
             img_x = sageattn(q, k_img, v_img, tensor_layout='NHD')
             x = sageattn(q, k, v, tensor_layout='NHD')
         else:   
-            # img_x = attention(q, k_img, v_img, k_lens=None)
             img_x = self.fav3.forward(q, k_img, v_img, layout_head_first=False)
             htcore.mark_step()
             # compute attention
-            # x = attention(q, k, v, k_lens=context_lens)
             x = self.fav3.forward(q, k, v, layout_head_first=False)
             htcore.mark_step()
 
@@ -821,7 +821,6 @@ class WanModel(ModelMixin, ConfigMixin):
             for block in self.blocks:
                 x = block(x, **kwargs)
                 htcore.mark_step()
-                # torch.hpu.synchronize()
 
         # head
         x = self.head(x, e)

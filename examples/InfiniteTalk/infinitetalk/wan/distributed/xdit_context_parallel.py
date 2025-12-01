@@ -15,8 +15,8 @@ from ..modules.model import sinusoidal_embedding_1d
 from ..utils.multitalk_utils import get_attn_map_with_target, split_token_counts_and_frame_ids, normalize_and_scale
 from ..modules.attention import SingleStreamAttention, SingleStreamMutiAttention, attention, FlashAttnV3Gaudi
 
-
 import habana_frameworks.torch.core as htcore
+
 def pad_freqs(original_tensor, target_len):
     seq_len, s1, s2 = original_tensor.shape
     pad_size = target_len - seq_len
@@ -505,7 +505,6 @@ def usp_attn_forward_multitalk(self,
 
     # x = attention(half(q),half(k),half(v),)
     x = self.fav3.forward(half(q), half(k), half(v), cp_size=get_sequence_parallel_world_size(), layout_head_first=False)
-
     htcore.mark_step()
 
     # output
