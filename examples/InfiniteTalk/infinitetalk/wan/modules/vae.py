@@ -253,11 +253,6 @@ class AttentionBlock(nn.Module):
                                                          3, dim=-1)
 
         # apply attention
-        # x = F.scaled_dot_product_attention(
-        #     q,
-        #     k,
-        #     v,
-        # )
         x = self.fav3.forward(q, k, v, layout_head_first=True)
         htcore.mark_step()
         

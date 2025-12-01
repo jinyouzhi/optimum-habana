@@ -369,7 +369,6 @@ class WanAttentionBlock(nn.Module):
         with amp.autocast(dtype=torch.float32):
             x = x + y * e[5]
 
-
         x = x.to(dtype)
 
         return x
@@ -543,7 +542,6 @@ class WanModel(ModelMixin, ConfigMixin):
         self.cross_attn_norm = cross_attn_norm
         self.eps = eps
 
-
         self.norm_output_audio = norm_output_audio
         self.audio_window = audio_window
         self.intermediate_dim = intermediate_dim
@@ -603,7 +601,6 @@ class WanModel(ModelMixin, ConfigMixin):
                     context_tokens=context_tokens,
                     norm_output_audio=norm_output_audio,
                 )
-
 
         # initialize weights
         if weight_init:
@@ -730,7 +727,6 @@ class WanModel(ModelMixin, ConfigMixin):
         audio_embedding = self.audio_proj(first_frame_audio_emb_s, latter_frame_audio_emb_s) 
         human_num = len(audio_embedding)
         audio_embedding = torch.concat(audio_embedding.split(1), dim=2).to(x.dtype)
-
 
         # convert ref_target_masks to token_ref_target_masks
         if ref_target_masks is not None:

@@ -280,8 +280,6 @@ def usp_attn_forward(self,
     return x
 
 
-
-
 def usp_dit_forward_multitalk(
     self,
     x,
@@ -359,7 +357,6 @@ def usp_dit_forward_multitalk(
     audio_embedding = self.audio_proj(first_frame_audio_emb_s, latter_frame_audio_emb_s) 
     human_num = len(audio_embedding)
     audio_embedding = torch.concat(audio_embedding.split(1), dim=2).to(x.dtype)
-
 
     # convert ref_target_masks to token_ref_target_masks
     if ref_target_masks is not None:
@@ -525,8 +522,6 @@ def usp_attn_forward_multitalk(self,
     return x, x_ref_attn_map
 
 
-
-
 def sp_crossattn_multi_forward(self, 
                                         x: torch.Tensor, 
                                         encoder_hidden_states: torch.Tensor,  # 1, 21, 64, C
@@ -575,7 +570,6 @@ def sp_crossattn_multi_forward(self,
     x = get_sp_group().all_to_all(x, scatter_dim=1, gather_dim=2)
     # get [B, N_t*N_h*N_w/sp_size, H, D]
 
-
     # linear transform
     x_output_shape = (B, N, -1)
     x = x.reshape(x_output_shape) 
@@ -583,7 +577,6 @@ def sp_crossattn_multi_forward(self,
     x = self.proj_drop(x)
 
     return x
-
 
 
 def usp_crossattn_multi_forward_multitalk(self, 
@@ -605,7 +598,6 @@ def usp_crossattn_multi_forward_multitalk(self,
 
         if human_num == 1:
             return super(SingleStreamMutiAttention, self).forward(x, encoder_hidden_states, shape, enable_sp=True, kv_seq=kv_seq)
-
 
         # get q for hidden_state
         B, N, C = x.shape
@@ -648,12 +640,6 @@ def usp_crossattn_multi_forward_multitalk(self,
         encoder_k = self.rope_1d(encoder_k, encoder_pos)
 
         # get attn
-        # q = rearrange(q, "B H M K -> B M H K")
-        # encoder_k = rearrange(encoder_k, "B H M K -> B M H K")
-        # encoder_v = rearrange(encoder_v, "B H M K -> B M H K")
-
-        # attn_bias = xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens(visual_seqlen, kv_seq)
-        # x = xformers.ops.memory_efficient_attention(q, encoder_k, encoder_v, attn_bias=attn_bias, op=None,)
         x = self.fav3.forward(q, encoder_k, encoder_v, cp_size=get_sequence_parallel_world_size(), layout_head_first=True)
         htcore.mark_step()
 

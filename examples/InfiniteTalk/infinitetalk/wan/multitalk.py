@@ -813,7 +813,6 @@ class InfiniteTalkPipeline:
             cond_image = cond_image.to(self.device)  # 1 C 1 H W
 
             # Repeat audio emb
-            print(f"-----------------audio_end_idx: {audio_end_idx}, max_frames_num: {max_frames_num},  len(full_audio_embs[0]): { len(full_audio_embs[0])}\n")
             if audio_end_idx >= min(max_frames_num, len(full_audio_embs[0])):
                 arrive_last_frame = True
                 miss_lengths = []

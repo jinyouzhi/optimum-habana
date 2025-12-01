@@ -6,12 +6,6 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 from ..utils.multitalk_utils import RotaryPositionalEmbedding1D, normalize_and_scale, split_token_counts_and_frame_ids
-from wan.distributed.parallel_state import (
-    get_sequence_parallel_rank,
-    get_sequence_parallel_world_size,
-    get_sp_group,
-)
-# import xformers.ops
 from habana_frameworks.torch.hpex.kernels import FusedSDPA
 import habana_frameworks.torch.core as htcore
 
@@ -71,7 +65,7 @@ class FlashAttnV3Gaudi:
             )
             return output.permute(0, 2, 1, 3).contiguous() if not layout_head_first else output
  
-        #Flash Attention V3 for Full Attention
+        # Flash Attention V3 for Full Attention
         linv_factor = 128.0 if fsdpa_mode == "fast" else 1.0
 
         num_query_chunk = int((query_len - 1) / self.q_chunk) + 1
@@ -339,10 +333,10 @@ class SingleStreamAttention(nn.Module):
         self.fav3 = FlashAttnV3Gaudi()
 
     def forward(self, x: torch.Tensor, encoder_hidden_states: torch.Tensor, shape=None, enable_sp=False, kv_seq=None) -> torch.Tensor:
-       
         N_t, N_h, N_w = shape
-        # if not enable_sp:
-        #     x = rearrange(x, "B (N_t S) C -> (B N_t) S C", N_t=N_t)
+
+        if not enable_sp:
+            x = rearrange(x, "B (N_t S) C -> (B N_t) S C", N_t=N_t)
 
         # get q for hidden_state
         B, N, C = x.shape
@@ -363,28 +357,9 @@ class SingleStreamAttention(nn.Module):
         if self.qk_norm:
             encoder_k = self.add_k_norm(encoder_k)
 
-
-        # q = rearrange(q, "B H M K -> B M H K")
-        # encoder_k = rearrange(encoder_k, "B H M K -> B M H K")
-        # encoder_v = rearrange(encoder_v, "B H M K -> B M H K")
-
-        # if enable_sp:
-        #     # context parallel
-        #     sp_size = get_sequence_parallel_world_size()
-        #     sp_rank = get_sequence_parallel_rank()
-        #     visual_seqlen, _ = split_token_counts_and_frame_ids(N_t, N_h * N_w, sp_size, sp_rank)
-        #     assert kv_seq is not None, f"kv_seq should not be None."
-        #     attn_bias = xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens(visual_seqlen, kv_seq)
-        #     attn_bias = None
-        # else:
-        #     attn_bias = None
-        # gather q/k/v sequence
-
+        # attn computation
         x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=True)
         htcore.mark_step()
-
-        # x = attention(q, encoder_k, encoder_v)
-        # x = rearrange(x, "B M H K -> B H M K")
 
         # linear transform
         x_output_shape = (B, N, C)
