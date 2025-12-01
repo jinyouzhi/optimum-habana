@@ -36,9 +36,7 @@ if TYPE_CHECKING:
     from kokoro import KPipeline
 
 
-def generate_audio(
-    text: str, kokoro_language: str, voice: str, speed=1
-) -> Generator["KPipeline.Result", None, None]:
+def generate_audio(text: str, kokoro_language: str, voice: str, speed=1) -> Generator["KPipeline.Result", None, None]:
     from kokoro import KPipeline
 
     if not voice.startswith(kokoro_language):
@@ -47,17 +45,13 @@ def generate_audio(
     yield from pipeline(text, voice=voice, speed=speed, split_pattern=r"\n+")
 
 
-def generate_and_save_audio(
-    output_file: Path, text: str, kokoro_language: str, voice: str, speed=1
-) -> None:
+def generate_and_save_audio(output_file: Path, text: str, kokoro_language: str, voice: str, speed=1) -> None:
     with wave.open(str(output_file.resolve()), "wb") as wav_file:
         wav_file.setnchannels(1)  # Mono audio
         wav_file.setsampwidth(2)  # 2 bytes per sample (16-bit audio)
         wav_file.setframerate(24000)  # Sample rate
 
-        for result in generate_audio(
-            text, kokoro_language=kokoro_language, voice=voice, speed=speed
-        ):
+        for result in generate_audio(text, kokoro_language=kokoro_language, voice=voice, speed=speed):
             logger.debug(result.phonemes)
             if result.audio is None:
                 continue
@@ -127,8 +121,9 @@ def main() -> None:
         text = file.read_text()
     else:
         import sys
+
         print("Press Ctrl+D to stop reading input and start generating", flush=True)
-        text = '\n'.join(sys.stdin)
+        text = "\n".join(sys.stdin)
 
     logger.debug(f"Input text: {text!r}")
 

@@ -4,23 +4,23 @@ from easydict import EasyDict
 
 from .shared_config import wan_shared_cfg
 
-#------------------------ Wan I2V 14B ------------------------#
+# ------------------------ Wan I2V 14B ------------------------#
 
-multitalk_14B = EasyDict(__name__='Config: Wan MultiTalk AI2V 14B')
+multitalk_14B = EasyDict(__name__="Config: Wan MultiTalk AI2V 14B")
 multitalk_14B.update(wan_shared_cfg)
-multitalk_14B.sample_neg_prompt = 'bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards'
+multitalk_14B.sample_neg_prompt = "bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
 
-multitalk_14B.t5_checkpoint = 'models_t5_umt5-xxl-enc-bf16.pth'
-multitalk_14B.t5_tokenizer = 'google/umt5-xxl'
+multitalk_14B.t5_checkpoint = "models_t5_umt5-xxl-enc-bf16.pth"
+multitalk_14B.t5_tokenizer = "google/umt5-xxl"
 
 # clip
-multitalk_14B.clip_model = 'clip_xlm_roberta_vit_h_14'
+multitalk_14B.clip_model = "clip_xlm_roberta_vit_h_14"
 multitalk_14B.clip_dtype = torch.float16
-multitalk_14B.clip_checkpoint = 'models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth'
-multitalk_14B.clip_tokenizer = 'xlm-roberta-large'
+multitalk_14B.clip_checkpoint = "models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"
+multitalk_14B.clip_tokenizer = "xlm-roberta-large"
 
 # vae
-multitalk_14B.vae_checkpoint = 'Wan2.1_VAE.pth'
+multitalk_14B.vae_checkpoint = "Wan2.1_VAE.pth"
 multitalk_14B.vae_stride = (4, 8, 8)
 
 # transformer

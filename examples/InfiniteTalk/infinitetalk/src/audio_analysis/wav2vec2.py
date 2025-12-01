@@ -3,6 +3,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 from src.audio_analysis.torch_utils import linear_interpolation
 
+
 # the implementation of Wav2Vec2Model is borrowed from
 # https://github.com/huggingface/transformers/blob/HEAD/src/transformers/models/wav2vec2/modeling_wav2vec2.py
 # initialize our encoder with the pre-trained wav2vec 2.0 weights.
@@ -56,13 +57,12 @@ class Wav2Vec2Model(Wav2Vec2Model):
             hidden_states = self.adapter(hidden_states)
 
         if not return_dict:
-            return (hidden_states, ) + encoder_outputs[1:]
+            return (hidden_states,) + encoder_outputs[1:]
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
         )
-
 
     def feature_extract(
         self,
@@ -96,7 +96,6 @@ class Wav2Vec2Model(Wav2Vec2Model):
             attention_mask = self._get_feature_vector_attention_mask(
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
-            
 
         hidden_states, extract_features = self.feature_projection(extract_features)
         hidden_states = self._mask_hidden_states(
@@ -117,7 +116,7 @@ class Wav2Vec2Model(Wav2Vec2Model):
             hidden_states = self.adapter(hidden_states)
 
         if not return_dict:
-            return (hidden_states, ) + encoder_outputs[1:]
+            return (hidden_states,) + encoder_outputs[1:]
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=encoder_outputs.hidden_states,

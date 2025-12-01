@@ -2,6 +2,7 @@ from contextlib import contextmanager
 
 import torch
 
+
 @contextmanager
 def init_weights_on_device(device=torch.device("meta"), include_buffers: bool = False):
     old_register_parameter = torch.nn.Module.register_parameter
@@ -14,9 +15,7 @@ def init_weights_on_device(device=torch.device("meta"), include_buffers: bool = 
             param_cls = type(module._parameters[name])
             kwargs = module._parameters[name].__dict__
             kwargs["requires_grad"] = param.requires_grad
-            module._parameters[name] = param_cls(
-                module._parameters[name].to(device), **kwargs
-            )
+            module._parameters[name] = param_cls(module._parameters[name].to(device), **kwargs)
 
     def register_empty_buffer(module, name, buffer, persistent=True):
         old_register_buffer(module, name, buffer, persistent=persistent)

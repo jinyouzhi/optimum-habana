@@ -15,6 +15,5 @@ def get_mask_from_lengths(lengths, max_len=None):
 
 def linear_interpolation(features, seq_len):
     features = features.transpose(1, 2)
-    output_features = F.interpolate(features, size=seq_len, align_corners=True, mode='linear')
+    output_features = F.interpolate(features, size=seq_len, align_corners=True, mode="linear")
     return output_features.transpose(1, 2)
-

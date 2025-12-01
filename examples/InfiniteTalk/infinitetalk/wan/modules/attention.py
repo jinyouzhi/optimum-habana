@@ -11,12 +11,14 @@ import habana_frameworks.torch.core as htcore
 
 try:
     import flash_attn_interface
+
     FLASH_ATTN_3_AVAILABLE = True
 except ModuleNotFoundError:
     FLASH_ATTN_3_AVAILABLE = False
 
 try:
     import flash_attn
+
     FLASH_ATTN_2_AVAILABLE = True
 except ModuleNotFoundError:
     FLASH_ATTN_2_AVAILABLE = False
@@ -24,9 +26,10 @@ except ModuleNotFoundError:
 import warnings
 
 __all__ = [
-    'flash_attention',
-    'attention',
+    "flash_attention",
+    "attention",
 ]
+
 
 class FlashAttnV3Gaudi:
     def __init__(self):
@@ -41,9 +44,8 @@ class FlashAttnV3Gaudi:
         attention_mask: Optional[torch.Tensor] = None,
         fsdpa_mode: str = "fast",
         cp_size: int = 1,
-        layout_head_first = False,
-        ) -> torch.Tensor:
-
+        layout_head_first=False,
+    ) -> torch.Tensor:
         # Change to (batch, heads, seq_len, head_dim)
         if not layout_head_first:
             query, key, value = (x.permute(0, 2, 1, 3).contiguous() for x in (query, key, value))
@@ -51,20 +53,10 @@ class FlashAttnV3Gaudi:
         key_len = key.size(-2)
 
         # In the case of cross-attn, use FusedSDPA.
-        if  (query_len * cp_size) != key_len:
-            output = FusedSDPA.apply(
-                query,
-                key,
-                value,
-                attention_mask,
-                0.0,
-                False,
-                None,
-                fsdpa_mode,
-                None
-            )
+        if (query_len * cp_size) != key_len:
+            output = FusedSDPA.apply(query, key, value, attention_mask, 0.0, False, None, fsdpa_mode, None)
             return output.permute(0, 2, 1, 3).contiguous() if not layout_head_first else output
- 
+
         # Flash Attention V3 for Full Attention
         linv_factor = 128.0 if fsdpa_mode == "fast" else 1.0
 
@@ -74,7 +66,6 @@ class FlashAttnV3Gaudi:
         final_hidden_list = []
 
         for query_idx in range(num_query_chunk):
-
             query_start = query_idx * self.q_chunk
             query_end = (query_idx + 1) * self.q_chunk if query_idx < num_query_chunk - 1 else query_len
             query_slice = query[..., query_start:query_end, :]
@@ -84,7 +75,6 @@ class FlashAttnV3Gaudi:
             linv = None
 
             for kv_idx in range(num_kv_chunk):
-
                 kv_start = kv_idx * self.kv_chunk
                 kv_end = (kv_idx + 1) * self.kv_chunk if kv_idx < num_kv_chunk - 1 else key_len
 
@@ -101,7 +91,7 @@ class FlashAttnV3Gaudi:
                     False,
                     True,
                     "fast",
-                    None, #vsl,
+                    None,  # vsl,
                     "left",
                 )
 
@@ -134,7 +124,7 @@ def flash_attention(
     v,
     q_lens=None,
     k_lens=None,
-    dropout_p=0.,
+    dropout_p=0.0,
     softmax_scale=None,
     q_scale=None,
     causal=False,
@@ -158,7 +148,7 @@ def flash_attention(
     """
     half_dtypes = (torch.float16, torch.bfloat16)
     assert dtype in half_dtypes
-    assert q.device.type == 'cuda' and q.size(-1) <= 256
+    assert q.device.type == "cuda" and q.size(-1) <= 256
 
     # params
     b, lq, lk, out_dtype = q.size(0), q.size(1), k.size(1), q.dtype
@@ -169,9 +159,7 @@ def flash_attention(
     # preprocess query
     if q_lens is None:
         q = half(q.flatten(0, 1))
-        q_lens = torch.tensor(
-            [lq] * b, dtype=torch.int32).to(
-                device=q.device, non_blocking=True)
+        q_lens = torch.tensor([lq] * b, dtype=torch.int32).to(device=q.device, non_blocking=True)
     else:
         q = half(torch.cat([u[:v] for u, v in zip(q, q_lens)]))
 
@@ -179,9 +167,7 @@ def flash_attention(
     if k_lens is None:
         k = half(k.flatten(0, 1))
         v = half(v.flatten(0, 1))
-        k_lens = torch.tensor(
-            [lk] * b, dtype=torch.int32).to(
-                device=k.device, non_blocking=True)
+        k_lens = torch.tensor([lk] * b, dtype=torch.int32).to(device=k.device, non_blocking=True)
     else:
         k = half(torch.cat([u[:v] for u, v in zip(k, k_lens)]))
         v = half(torch.cat([u[:v] for u, v in zip(v, k_lens)]))
@@ -193,9 +179,7 @@ def flash_attention(
         q = q * q_scale
 
     if version is not None and version == 3 and not FLASH_ATTN_3_AVAILABLE:
-        warnings.warn(
-            'Flash attention 3 is not available, use flash attention 2 instead.'
-        )
+        warnings.warn("Flash attention 3 is not available, use flash attention 2 instead.")
 
     # apply attention
     if (version is None or version == 3) and FLASH_ATTN_3_AVAILABLE:
@@ -204,34 +188,40 @@ def flash_attention(
             q=q,
             k=k,
             v=v,
-            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
-                0, dtype=torch.int32).to(q.device, non_blocking=True),
-            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
-                0, dtype=torch.int32).to(q.device, non_blocking=True),
+            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens])
+            .cumsum(0, dtype=torch.int32)
+            .to(q.device, non_blocking=True),
+            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens])
+            .cumsum(0, dtype=torch.int32)
+            .to(q.device, non_blocking=True),
             seqused_q=None,
             seqused_k=None,
             max_seqlen_q=lq,
             max_seqlen_k=lk,
             softmax_scale=softmax_scale,
             causal=causal,
-            deterministic=deterministic)[0].unflatten(0, (b, lq))
+            deterministic=deterministic,
+        )[0].unflatten(0, (b, lq))
     else:
         assert FLASH_ATTN_2_AVAILABLE
         x = flash_attn.flash_attn_varlen_func(
             q=q,
             k=k,
             v=v,
-            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
-                0, dtype=torch.int32).to(q.device, non_blocking=True),
-            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
-                0, dtype=torch.int32).to(q.device, non_blocking=True),
+            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens])
+            .cumsum(0, dtype=torch.int32)
+            .to(q.device, non_blocking=True),
+            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens])
+            .cumsum(0, dtype=torch.int32)
+            .to(q.device, non_blocking=True),
             max_seqlen_q=lq,
             max_seqlen_k=lk,
             dropout_p=dropout_p,
             softmax_scale=softmax_scale,
             causal=causal,
             window_size=window_size,
-            deterministic=deterministic).unflatten(0, (b, lq))
+            deterministic=deterministic,
+        ).unflatten(0, (b, lq))
 
     # output
     return x.type(out_dtype)
@@ -243,7 +233,7 @@ def attention(
     v,
     q_lens=None,
     k_lens=None,
-    dropout_p=0.,
+    dropout_p=0.0,
     softmax_scale=None,
     q_scale=None,
     causal=False,
@@ -271,7 +261,7 @@ def attention(
     else:
         if q_lens is not None or k_lens is not None:
             warnings.warn(
-                'Padding mask is disabled when using scaled_dot_product_attention. It can have a significant impact on performance.'
+                "Padding mask is disabled when using scaled_dot_product_attention. It can have a significant impact on performance."
             )
         attn_mask = None
 
@@ -293,7 +283,7 @@ def attention(
 
         out = out.transpose(1, 2).contiguous()
         return out
-    
+
 
 class SingleStreamAttention(nn.Module):
     def __init__(
@@ -320,7 +310,7 @@ class SingleStreamAttention(nn.Module):
         self.q_linear = nn.Linear(dim, dim, bias=qkv_bias)
 
         self.q_norm = norm_layer(self.head_dim, eps=eps) if qk_norm else nn.Identity()
-        self.k_norm = norm_layer(self.head_dim,eps=eps) if qk_norm else nn.Identity()
+        self.k_norm = norm_layer(self.head_dim, eps=eps) if qk_norm else nn.Identity()
 
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
@@ -332,7 +322,9 @@ class SingleStreamAttention(nn.Module):
         self.add_k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.fav3 = FlashAttnV3Gaudi()
 
-    def forward(self, x: torch.Tensor, encoder_hidden_states: torch.Tensor, shape=None, enable_sp=False, kv_seq=None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, encoder_hidden_states: torch.Tensor, shape=None, enable_sp=False, kv_seq=None
+    ) -> torch.Tensor:
         N_t, N_h, N_w = shape
 
         if not enable_sp:
@@ -346,7 +338,7 @@ class SingleStreamAttention(nn.Module):
 
         if self.qk_norm:
             q = self.q_norm(q)
-        
+
         # get kv from encoder_hidden_states
         _, N_a, _ = encoder_hidden_states.shape
         encoder_kv = self.kv_linear(encoder_hidden_states)
@@ -363,8 +355,8 @@ class SingleStreamAttention(nn.Module):
 
         # linear transform
         x_output_shape = (B, N, C)
-        x = x.transpose(1, 2) 
-        x = x.reshape(x_output_shape) 
+        x = x.transpose(1, 2)
+        x = x.reshape(x_output_shape)
         x = self.proj(x)
         x = self.proj_drop(x)
 
@@ -373,6 +365,7 @@ class SingleStreamAttention(nn.Module):
             x = rearrange(x, "(B N_t) S C -> B (N_t S) C", N_t=N_t)
 
         return x
+
 
 class SingleStreamMutiAttention(SingleStreamAttention):
     def __init__(
@@ -402,84 +395,82 @@ class SingleStreamMutiAttention(SingleStreamAttention):
         )
         self.class_interval = class_interval
         self.class_range = class_range
-        self.rope_h1  = (0, self.class_interval)
-        self.rope_h2  = (self.class_range - self.class_interval, self.class_range)
+        self.rope_h1 = (0, self.class_interval)
+        self.rope_h2 = (self.class_range - self.class_interval, self.class_range)
         self.rope_bak = int(self.class_range // 2)
 
         self.rope_1d = RotaryPositionalEmbedding1D(self.head_dim)
         self.fav3 = FlashAttnV3Gaudi()
 
-    def forward(self, 
-                x: torch.Tensor, 
-                encoder_hidden_states: torch.Tensor, 
-                shape=None, 
-                x_ref_attn_map=None,
-                human_num=None) -> torch.Tensor:
-        
+    def forward(
+        self, x: torch.Tensor, encoder_hidden_states: torch.Tensor, shape=None, x_ref_attn_map=None, human_num=None
+    ) -> torch.Tensor:
         encoder_hidden_states = encoder_hidden_states.squeeze(0)
         if human_num == 1:
             return super().forward(x, encoder_hidden_states, shape)
 
-        N_t, _, _ = shape 
-        x = rearrange(x, "B (N_t S) C -> (B N_t) S C", N_t=N_t) 
+        N_t, _, _ = shape
+        x = rearrange(x, "B (N_t S) C -> (B N_t) S C", N_t=N_t)
 
         # get q for hidden_state
         B, N, C = x.shape
-        q = self.q_linear(x) 
-        q_shape = (B, N, self.num_heads, self.head_dim) 
+        q = self.q_linear(x)
+        q_shape = (B, N, self.num_heads, self.head_dim)
         q = q.reshape(q_shape).permute((0, 2, 1, 3))
 
         if self.qk_norm:
             q = self.q_norm(q)
 
-  
-        max_values = x_ref_attn_map.max(1).values[:, None, None] 
-        min_values = x_ref_attn_map.min(1).values[:, None, None] 
+        max_values = x_ref_attn_map.max(1).values[:, None, None]
+        min_values = x_ref_attn_map.min(1).values[:, None, None]
         max_min_values = torch.cat([max_values, min_values], dim=2)
 
         human1_max_value, human1_min_value = max_min_values[0, :, 0].max(), max_min_values[0, :, 1].min()
         human2_max_value, human2_min_value = max_min_values[1, :, 0].max(), max_min_values[1, :, 1].min()
 
-        human1 = normalize_and_scale(x_ref_attn_map[0], (human1_min_value, human1_max_value), (self.rope_h1[0], self.rope_h1[1]))
-        human2 = normalize_and_scale(x_ref_attn_map[1], (human2_min_value, human2_max_value), (self.rope_h2[0], self.rope_h2[1]))
-        back   = torch.full((x_ref_attn_map.size(1),), self.rope_bak, dtype=human1.dtype).to(human1.device)
+        human1 = normalize_and_scale(
+            x_ref_attn_map[0], (human1_min_value, human1_max_value), (self.rope_h1[0], self.rope_h1[1])
+        )
+        human2 = normalize_and_scale(
+            x_ref_attn_map[1], (human2_min_value, human2_max_value), (self.rope_h2[0], self.rope_h2[1])
+        )
+        back = torch.full((x_ref_attn_map.size(1),), self.rope_bak, dtype=human1.dtype).to(human1.device)
         max_indices = x_ref_attn_map.argmax(dim=0)
         normalized_map = torch.stack([human1, human2, back], dim=1)
-        normalized_pos = normalized_map[range(x_ref_attn_map.size(1)), max_indices] # N 
+        normalized_pos = normalized_map[range(x_ref_attn_map.size(1)), max_indices]  # N
 
         q = rearrange(q, "(B N_t) H S C -> B H (N_t S) C", N_t=N_t)
         q = self.rope_1d(q, normalized_pos)
         q = rearrange(q, "B H (N_t S) C -> (B N_t) H S C", N_t=N_t)
 
-        _, N_a, _ = encoder_hidden_states.shape 
-        encoder_kv = self.kv_linear(encoder_hidden_states) 
+        _, N_a, _ = encoder_hidden_states.shape
+        encoder_kv = self.kv_linear(encoder_hidden_states)
         encoder_kv_shape = (B, N_a, 2, self.num_heads, self.head_dim)
-        encoder_kv = encoder_kv.reshape(encoder_kv_shape).permute((2, 0, 3, 1, 4)) 
-        encoder_k, encoder_v = encoder_kv.unbind(0) 
+        encoder_kv = encoder_kv.reshape(encoder_kv_shape).permute((2, 0, 3, 1, 4))
+        encoder_k, encoder_v = encoder_kv.unbind(0)
 
         if self.qk_norm:
             encoder_k = self.add_k_norm(encoder_k)
 
-        
         per_frame = torch.zeros(N_a, dtype=encoder_k.dtype).to(encoder_k.device)
-        per_frame[:per_frame.size(0)//2] = (self.rope_h1[0] + self.rope_h1[1]) / 2
-        per_frame[per_frame.size(0)//2:] = (self.rope_h2[0] + self.rope_h2[1]) / 2
-        encoder_pos = torch.concat([per_frame]*N_t, dim=0)
+        per_frame[: per_frame.size(0) // 2] = (self.rope_h1[0] + self.rope_h1[1]) / 2
+        per_frame[per_frame.size(0) // 2 :] = (self.rope_h2[0] + self.rope_h2[1]) / 2
+        encoder_pos = torch.concat([per_frame] * N_t, dim=0)
         encoder_k = rearrange(encoder_k, "(B N_t) H S C -> B H (N_t S) C", N_t=N_t)
         encoder_k = self.rope_1d(encoder_k, encoder_pos)
         encoder_k = rearrange(encoder_k, "B H (N_t S) C -> (B N_t) H S C", N_t=N_t)
 
         x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=True)
         htcore.mark_step()
-        
+
         # linear transform
         x_output_shape = (B, N, C)
-        x = x.transpose(1, 2) 
-        x = x.reshape(x_output_shape) 
-        x = self.proj(x) 
+        x = x.transpose(1, 2)
+        x = x.reshape(x_output_shape)
+        x = self.proj(x)
         x = self.proj_drop(x)
 
         # reshape x to origin shape
-        x = rearrange(x, "(B N_t) S C -> B (N_t S) C", N_t=N_t) 
+        x = rearrange(x, "(B N_t) S C -> B (N_t S) C", N_t=N_t)
 
         return x

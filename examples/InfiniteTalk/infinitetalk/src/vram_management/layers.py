@@ -5,18 +5,21 @@ import torch
 from src.utils import init_weights_on_device
 import optimum.quanto.nn.qlinear as qlinear
 
+
 def cast_to(weight, dtype, device):
     r = torch.empty_like(weight, dtype=dtype, device=device)
     r.copy_(weight)
     return r
 
+
 def cast_to_device(weight, device):
-    if hasattr(weight, '__class__') and 'optimum.quanto' in str(weight.__class__):  
+    if hasattr(weight, "__class__") and "optimum.quanto" in str(weight.__class__):
         return weight.to(device)
     else:
         r = torch.empty_like(weight, device=device)
         r.copy_(weight)
         return r
+
 
 class AutoWrappedModule(torch.nn.Module):
     def __init__(
@@ -40,33 +43,21 @@ class AutoWrappedModule(torch.nn.Module):
         self.state = 0
 
     def offload(self):
-        if self.state == 1 and (
-            self.offload_dtype != self.onload_dtype
-            or self.offload_device != self.onload_device
-        ):
+        if self.state == 1 and (self.offload_dtype != self.onload_dtype or self.offload_device != self.onload_device):
             self.module.to(dtype=self.offload_dtype, device=self.offload_device)
             self.state = 0
 
     def onload(self):
-        if self.state == 0 and (
-            self.offload_dtype != self.onload_dtype
-            or self.offload_device != self.onload_device
-        ):
+        if self.state == 0 and (self.offload_dtype != self.onload_dtype or self.offload_device != self.onload_device):
             self.module.to(dtype=self.onload_dtype, device=self.onload_device)
             self.state = 1
 
     def forward(self, *args, **kwargs):
-        if (
-            self.onload_dtype == self.computation_dtype
-            and self.onload_device == self.computation_device
-        ):
+        if self.onload_dtype == self.computation_dtype and self.onload_device == self.computation_device:
             module = self.module
         else:
-            module = copy.deepcopy(self.module).to(
-                dtype=self.computation_dtype, device=self.computation_device
-            )
+            module = copy.deepcopy(self.module).to(dtype=self.computation_dtype, device=self.computation_device)
         return module(*args, **kwargs)
-
 
 
 class AutoWrappedQLinear(qlinear.QLinear):
@@ -96,34 +87,23 @@ class AutoWrappedQLinear(qlinear.QLinear):
         self.state = 0
 
     def offload(self):
-        if self.state == 1 and (
-             self.offload_device != self.onload_device
-        ):
+        if self.state == 1 and (self.offload_device != self.onload_device):
             self.to(device=self.offload_device)
             self.state = 0
 
     def onload(self):
-        if self.state == 0 and (
-            self.offload_device != self.onload_device
-        ):
+        if self.state == 0 and (self.offload_device != self.onload_device):
             self.to(device=self.onload_device)
             self.state = 1
 
     def forward(self, x, *args, **kwargs):
-        if (
-            self.onload_device == self.computation_device
-        ):
-            
+        if self.onload_device == self.computation_device:
             return torch.nn.functional.linear(x, self.weight, bias=self.bias)
         else:
-            
             qweight = cast_to_device(self.weight, self.computation_device)
-            bias = (
-                None
-                if self.bias is None
-                else cast_to_device(self.bias, self.computation_device)
-            )
+            bias = None if self.bias is None else cast_to_device(self.bias, self.computation_device)
             return torch.nn.functional.linear(x, qweight, bias)
+
 
 class AutoWrappedLinear(torch.nn.Linear):
     def __init__(
@@ -155,36 +135,21 @@ class AutoWrappedLinear(torch.nn.Linear):
         self.state = 0
 
     def offload(self):
-        if self.state == 1 and (
-            self.offload_dtype != self.onload_dtype
-            or self.offload_device != self.onload_device
-        ):
+        if self.state == 1 and (self.offload_dtype != self.onload_dtype or self.offload_device != self.onload_device):
             self.to(dtype=self.offload_dtype, device=self.offload_device)
             self.state = 0
 
     def onload(self):
-        if self.state == 0 and (
-            self.offload_dtype != self.onload_dtype
-            or self.offload_device != self.onload_device
-        ):
+        if self.state == 0 and (self.offload_dtype != self.onload_dtype or self.offload_device != self.onload_device):
             self.to(dtype=self.onload_dtype, device=self.onload_device)
             self.state = 1
 
     def forward(self, x, *args, **kwargs):
-        if (
-            self.onload_dtype == self.computation_dtype
-            and self.onload_device == self.computation_device
-        ):
+        if self.onload_dtype == self.computation_dtype and self.onload_device == self.computation_device:
             weight, bias = self.weight, self.bias
         else:
-            weight = cast_to(
-                self.weight, self.computation_dtype, self.computation_device
-            )
-            bias = (
-                None
-                if self.bias is None
-                else cast_to(self.bias, self.computation_dtype, self.computation_device)
-            )
+            weight = cast_to(self.weight, self.computation_dtype, self.computation_device)
+            bias = None if self.bias is None else cast_to(self.bias, self.computation_dtype, self.computation_device)
         return torch.nn.functional.linear(x, weight, bias)
 
 
@@ -201,10 +166,7 @@ def enable_vram_management_recursively(
             if isinstance(module, source_module):
                 num_param = sum(p.numel() for p in module.parameters())
                 # print(str(module) + ':' + str(num_param))
-                if (
-                    max_num_param is not None
-                    and total_num_param + num_param > max_num_param
-                ):
+                if max_num_param is not None and total_num_param + num_param > max_num_param:
                     # print(str(module) + '-->\t\t num:' + str(num_param) + "\t total:" + str(total_num_param))
                     module_config_ = overflow_module_config
                 else:
