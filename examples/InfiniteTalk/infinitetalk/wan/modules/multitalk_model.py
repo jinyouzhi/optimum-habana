@@ -219,10 +219,9 @@ class WanSelfAttention(nn.Module):
         # output
         x = x.flatten(2)
         x = self.o(x)
-        # with torch.no_grad():
-        #     x_ref_attn_map = get_attn_map_with_target(q.type_as(x), k.type_as(x), grid_sizes[0], 
-        #                                             ref_target_masks=ref_target_masks)
+
         x_ref_attn_map = None
+
         return x, x_ref_attn_map
 
 

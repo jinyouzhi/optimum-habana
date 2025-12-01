@@ -511,12 +511,7 @@ def usp_attn_forward_multitalk(self,
     x = x.flatten(2)
     x = self.o(x)
 
-    with torch.no_grad():
-        # Note: x_ref_attn_map is not used when human_num is 1, when human_num we need to fix the
-        # issue in the call of get_attn_map_with_target.
-        # x_ref_attn_map = get_attn_map_with_target(q.type_as(x), k.type_as(x), grid_sizes[0],
-        #                                     ref_target_masks=ref_target_masks, enable_sp=True)
-        x_ref_attn_map = None
+    x_ref_attn_map = None
 
     return x, x_ref_attn_map
 
