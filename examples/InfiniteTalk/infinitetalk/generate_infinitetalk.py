@@ -401,6 +401,9 @@ def generate(args):
         assert args.ulysses_size * args.ring_size == world_size, (
             f"The number of ulysses_size and ring_size should be equal to the world size."
         )
+        assert args.ulysses_size * args.ring_size <= 8, (
+            f"Currently, sequence parallel degree should be no larger than 8."
+        )  # TODO: remove this limit in the future
         from wan.distributed.parallel_state import (
             init_distributed_environment,
             initialize_model_parallel,
