@@ -32,9 +32,9 @@ PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 python generate_infinitetalk.py \
 multi device with sequence parallel:
 ```bash
 PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=4 --standalone generate_infinitetalk.py \
-    --ckpt_dir weights/Wan2.1-I2V-14B-480P \
-    --wav2vec_dir 'weights/chinese-wav2vec2-base' \
-    --infinitetalk_dir weights/InfiniteTalk/single/infinitetalk.safetensors \
+    --ckpt_dir  /mnt/new_disk/models/Wan2.1-I2V-14B-480P \
+    --wav2vec_dir '/mnt/new_disk/models/chinese-wav2vec2-base' \
+    --infinitetalk_dir  /mnt/new_disk/models/InfiniteTalk/single/infinitetalk.safetensors \
     --input_json examples/single_example_image.json \
     --size infinitetalk-480 \
     --sample_steps 40 \
