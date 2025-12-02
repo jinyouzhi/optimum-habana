@@ -490,7 +490,7 @@ def usp_attn_forward_multitalk(self, x, seq_lens, grid_sizes, freqs, dtype=torch
 def sp_crossattn_multi_forward(
     self,
     x: torch.Tensor,
-    encoder_hidden_states: torch.Tensor,  # 1, 21, 64, C
+    encoder_hidden_states: torch.Tensor, # [B, N_t, N_a, C]
     shape=None,
     x_ref_attn_map=None,
     human_num=None,
@@ -498,7 +498,7 @@ def sp_crossattn_multi_forward(
     assert human_num == 1, "sp_crossattn_multi_forward only supports human_num == 1"
     sp_size = get_sequence_parallel_world_size()
     sp_rank = get_sequence_parallel_rank()
-    encoder_hidden_states = encoder_hidden_states.squeeze(0)  # [21, 64, C]
+    encoder_hidden_states = encoder_hidden_states.squeeze(0) # [N_t, N_a, C]
 
     N_t, N_h, N_w = shape
     q = self.q_linear(x)
@@ -513,7 +513,7 @@ def sp_crossattn_multi_forward(
         q = self.q_norm(q)
 
     # get kv from encoder_hidden_states
-    _, N_a, _ = encoder_hidden_states.shape  # N_a = 32
+    _, N_a, _ = encoder_hidden_states.shape # N_a = audio_tokens_per_frame(32) * human_num
     encoder_k = (
         torch.matmul(encoder_hidden_states, torch.chunk(self.kv_linear.weight.T, sp_size * 2, dim=1)[sp_rank])
         + torch.chunk(self.kv_linear.bias, sp_size * 2)[sp_rank]
@@ -532,13 +532,12 @@ def sp_crossattn_multi_forward(
     if self.qk_norm:
         encoder_k = self.add_k_norm(encoder_k)
 
-    # attn with [B, N, H/sp_size, D] shape
-    x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=False)
+    # compute attention
+    x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=False) # [B, N, H/sp_size, D]
     htcore.mark_step()
-    # recover [B, N_t*N_h*N_w, H/sp_size, D] for all_to_all
-    x = x.reshape((B, -1, self.num_heads // sp_size, self.head_dim))
-    x = get_sp_group().all_to_all(x, scatter_dim=1, gather_dim=2)
-    # get [B, N_t*N_h*N_w/sp_size, H, D]
+    # reshape x for all_to_all
+    x = x.reshape((B, -1, self.num_heads // sp_size, self.head_dim)) # [B, N_t*N_h*N_w, H/sp_size, D]
+    x = get_sp_group().all_to_all(x, scatter_dim=1, gather_dim=2) # [B, N_t*N_h*N_w/sp_size, H, D]
 
     # linear transform
     x_output_shape = (B, N, -1)
