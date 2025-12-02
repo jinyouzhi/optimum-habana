@@ -26,6 +26,7 @@ PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 python generate_infinitetalk.py \
     --sample_steps 40 \
     --mode streaming \
     --motion_frame 9 \
+    --offload_model False \
     --save_file infinitetalk_res
 ```
 
@@ -40,5 +41,7 @@ PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=4 --standalo
     --sample_steps 40 \
     --mode streaming \
     --motion_frame 9 \
-    --save_file infinitetalk_res_multihpu  --ulysses_size=4
+    --offload_model False \
+    --save_file infinitetalk_res_multihpu \
+    --ulysses_size=4
 ```
