@@ -16,6 +16,7 @@ from ..utils.multitalk_utils import get_attn_map_with_target, split_token_counts
 from ..modules.attention import SingleStreamAttention, SingleStreamMutiAttention, attention, FlashAttnV3Gaudi
 
 import habana_frameworks.torch.core as htcore
+from habana_frameworks.torch.hpex.kernels import RotaryPosEmbeddingMode, apply_rotary_pos_emb
 
 
 def pad_freqs(original_tensor, target_len):
@@ -279,6 +280,8 @@ def usp_dit_forward_multitalk(
         x = [torch.cat([u, v], dim=0) for u, v in zip(x, y)]
     x[0] = x[0].to(context[0].dtype)
 
+    freqs = self.rope(x[0])
+
     # embeddings
     x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
     grid_sizes = torch.stack([torch.tensor(u.shape[2:], dtype=torch.long) for u in x])
@@ -391,12 +394,16 @@ def usp_dit_forward_multitalk(
     # Context Parallel
     x = torch.chunk(x, get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
 
+    cos = torch.chunk(freqs[0], get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
+    sin = torch.chunk(freqs[1], get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
+    freqs = (cos, sin)
+
     # arguments
     kwargs = dict(
         e=e0,
         seq_lens=seq_lens,
         grid_sizes=grid_sizes,
-        freqs=self.freqs,
+        freqs=freqs,
         context=context,
         context_lens=context_lens,
         audio_embedding=audio_embedding,
@@ -465,9 +472,9 @@ def usp_attn_forward_multitalk(self, x, seq_lens, grid_sizes, freqs, dtype=torch
 
     q, k, v = qkv_fn(x)
 
-    # Use Gaudi-specific rope as complex type not supported on HPU.
-    q = rope_apply_gaudi(q, grid_sizes, freqs).to(q.device)
-    k = rope_apply_gaudi(k, grid_sizes, freqs).to(q.device)
+    # RoPE
+    q = apply_rotary_pos_emb(q, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
+    k = apply_rotary_pos_emb(k, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
 
     # Context Parallel
     k = get_sp_group().all_gather(k, dim=1)

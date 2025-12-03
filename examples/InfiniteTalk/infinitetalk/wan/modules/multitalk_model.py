@@ -6,6 +6,7 @@ import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Tuple
 
 from einops import rearrange
 from diffusers import ModelMixin
@@ -25,6 +26,7 @@ except:
     USE_SAGEATTN = False
 
 import habana_frameworks.torch.core as htcore
+from habana_frameworks.torch.hpex.kernels import RotaryPosEmbeddingMode, apply_rotary_pos_emb
 
 
 __all__ = ["WanModel"]
@@ -62,6 +64,8 @@ def rope_params_gaudi(max_seq_len, dim, theta=10000):
     sin = torch.sin(freqs)  # [L, D/2]
     cos = torch.cos(freqs)
 
+    sin = torch.repeat_interleave(sin, 2, dim=1)
+    cos = torch.repeat_interleave(cos, 2, dim=1)
     return cos, sin
 
 
@@ -172,6 +176,57 @@ class WanLayerNorm(nn.LayerNorm):
         return out
 
 
+class WanRotaryPosEmbed(nn.Module):
+    def __init__(
+        self,
+        d: int, # attention_head_dim
+        patch_size: Tuple[int, int, int],
+    ):
+        super().__init__()
+        self.d = d
+        self.patch_size = patch_size
+
+        self.cos = torch.cat([
+            rope_params_gaudi(1024, d - 4 * (d // 6))[0],
+            rope_params_gaudi(1024, 2 * (d // 6))[0],
+            rope_params_gaudi(1024, 2 * (d // 6))[0]
+        ],dim=1).to("hpu")
+        self.sin = torch.cat([
+            rope_params_gaudi(1024, d - 4 * (d // 6))[1],
+            rope_params_gaudi(1024, 2 * (d // 6))[1],
+            rope_params_gaudi(1024, 2 * (d // 6))[1]
+        ],dim=1).to("hpu")
+
+        h_dim = w_dim = 2 * (d // 6)
+        t_dim = d - h_dim - w_dim
+
+        self.t_dim = t_dim
+        self.h_dim = h_dim
+        self.w_dim = w_dim
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        _, num_frames, height, width = hidden_states.shape
+        p_t, p_h, p_w = self.patch_size
+        ppf, pph, ppw = num_frames // p_t, height // p_h, width // p_w
+
+        split_sizes = [self.t_dim, self.h_dim, self.w_dim]
+        freqs_cos = self.cos.split(split_sizes, dim=1)
+        freqs_sin = self.sin.split(split_sizes, dim=1)
+
+        freqs_cos_f = freqs_cos[0][:ppf].reshape(ppf, 1, 1, -1).expand(ppf, pph, ppw, -1)
+        freqs_cos_h = freqs_cos[1][:pph].reshape(1, pph, 1, -1).expand(ppf, pph, ppw, -1)
+        freqs_cos_w = freqs_cos[2][:ppw].reshape(1, 1, ppw, -1).expand(ppf, pph, ppw, -1)
+
+        freqs_sin_f = freqs_sin[0][:ppf].reshape(ppf, 1, 1, -1).expand(ppf, pph, ppw, -1)
+        freqs_sin_h = freqs_sin[1][:pph].reshape(1, pph, 1, -1).expand(ppf, pph, ppw, -1)
+        freqs_sin_w = freqs_sin[2][:ppw].reshape(1, 1, ppw, -1).expand(ppf, pph, ppw, -1)
+
+        freqs_cos = torch.cat([freqs_cos_f, freqs_cos_h, freqs_cos_w], dim=-1).reshape(1, ppf * pph * ppw, 1, -1)
+        freqs_sin = torch.cat([freqs_sin_f, freqs_sin_h, freqs_sin_w], dim=-1).reshape(1, ppf * pph * ppw, 1, -1)
+
+        return freqs_cos, freqs_sin
+
+
 class WanSelfAttention(nn.Module):
     def __init__(self, dim, num_heads, window_size=(-1, -1), qk_norm=True, eps=1e-6):
         assert dim % num_heads == 0
@@ -204,8 +259,8 @@ class WanSelfAttention(nn.Module):
 
         q, k, v = qkv_fn(x)
 
-        q = rope_apply_gaudi(q, grid_sizes, freqs).to(q.device)
-        k = rope_apply_gaudi(k, grid_sizes, freqs).to(q.device)
+        q = apply_rotary_pos_emb(q, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
+        k = apply_rotary_pos_emb(k, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
 
         if USE_SAGEATTN:
             x = sageattn(q.to(torch.bfloat16), k.to(torch.bfloat16), v, tensor_layout="NHD")
@@ -570,24 +625,7 @@ class WanModel(ModelMixin, ConfigMixin):
         assert (dim % num_heads) == 0 and (dim // num_heads) % 2 == 0
         d = dim // num_heads
 
-        cos = torch.cat(
-            [
-                rope_params_gaudi(1024, d - 4 * (d // 6))[0],
-                rope_params_gaudi(1024, 2 * (d // 6))[0],
-                rope_params_gaudi(1024, 2 * (d // 6))[0],
-            ],
-            dim=1,
-        ).to("hpu")
-        sin = torch.cat(
-            [
-                rope_params_gaudi(1024, d - 4 * (d // 6))[1],
-                rope_params_gaudi(1024, 2 * (d // 6))[1],
-                rope_params_gaudi(1024, 2 * (d // 6))[1],
-            ],
-            dim=1,
-        ).to("hpu")
-
-        self.freqs = (cos, sin)
+        self.rope = WanRotaryPosEmbed(d, patch_size)
 
         if model_type == "i2v":
             self.img_emb = MLPProj(1280, dim)
@@ -695,6 +733,8 @@ class WanModel(ModelMixin, ConfigMixin):
         if y is not None:
             x = [torch.cat([u, v], dim=0) for u, v in zip(x, y)]
         x[0] = x[0].to(context[0].dtype)
+
+        freqs = self.rope(x[0])
 
         # embeddings
         x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
@@ -813,7 +853,7 @@ class WanModel(ModelMixin, ConfigMixin):
             e=e0,
             seq_lens=seq_lens,
             grid_sizes=grid_sizes,
-            freqs=self.freqs,
+            freqs=freqs,
             context=context,
             context_lens=context_lens,
             audio_embedding=audio_embedding,
