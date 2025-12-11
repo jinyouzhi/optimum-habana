@@ -42,7 +42,7 @@ class FlashAttnV3Gaudi:
         key: torch.Tensor,
         value: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
-        fsdpa_mode: str = "fast",
+        fsdpa_mode: str = "None",
         cp_size: int = 1,
         layout_head_first=False,
     ) -> torch.Tensor:
