@@ -259,8 +259,8 @@ class WanSelfAttention(nn.Module):
 
         q, k, v = qkv_fn(x)
 
-        q = apply_rotary_pos_emb(q, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
-        k = apply_rotary_pos_emb(k, *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE)
+        q = apply_rotary_pos_emb(q.to(freqs[0].dtype), *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
+        k = apply_rotary_pos_emb(k.to(freqs[0].dtype), *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
 
         if USE_SAGEATTN:
             x = sageattn(q.to(torch.bfloat16), k.to(torch.bfloat16), v, tensor_layout="NHD")
@@ -272,8 +272,9 @@ class WanSelfAttention(nn.Module):
         x = x.flatten(2)
         x = self.o(x)
 
-        x_ref_attn_map = None
-
+        with torch.no_grad():
+            x_ref_attn_map = get_attn_map_with_target(q.type_as(x), k.type_as(x), grid_sizes[0],
+                                                      ref_target_masks=ref_target_masks)
         return x, x_ref_attn_map
 
 
@@ -380,7 +381,7 @@ class WanAttentionBlock(nn.Module):
     ):
         dtype = x.dtype
         assert e.dtype == torch.float32
-        with amp.autocast(dtype=torch.float32):
+        with torch.autocast(device_type="hpu", dtype=torch.float32):
             e = (self.modulation.to(e.device) + e).chunk(6, dim=1)
         assert e[0].dtype == torch.float32
 
@@ -392,7 +393,7 @@ class WanAttentionBlock(nn.Module):
             freqs,
             ref_target_masks=ref_target_masks,
         )
-        with amp.autocast(dtype=torch.float32):
+        with torch.autocast(device_type="hpu", dtype=torch.float32):
             x = x + y * e[2]
 
         x = x.to(dtype)
@@ -405,13 +406,13 @@ class WanAttentionBlock(nn.Module):
             self.norm_x(x),
             encoder_hidden_states=audio_embedding,
             shape=grid_sizes[0],
-            x_ref_attn_map=None,
+            x_ref_attn_map=x_ref_attn_map,
             human_num=human_num,
         )
         x = x + x_a
 
         y = self.ffn((self.norm2(x).float() * (1 + e[4]) + e[3]).to(dtype))
-        with amp.autocast(dtype=torch.float32):
+        with torch.autocast(device_type="hpu", dtype=torch.float32):
             x = x + y * e[5]
 
         x = x.to(dtype)
@@ -442,7 +443,7 @@ class Head(nn.Module):
             e(Tensor): Shape [B, C]
         """
         assert e.dtype == torch.float32
-        with amp.autocast(dtype=torch.float32):
+        with torch.autocast(device_type="hpu", dtype=torch.float32):
             e = (self.modulation.to(e.device) + e.unsqueeze(1)).chunk(2, dim=1)
             x = self.head(self.norm(x) * (1 + e[1]) + e[0])
         return x
@@ -524,7 +525,7 @@ class AudioProjModel(ModelMixin, ConfigMixin):
         context_tokens = self.proj3(audio_embeds_c).reshape(batch_size_c * N_t, self.context_tokens, self.output_dim)
 
         # normalization and reshape
-        with amp.autocast(dtype=torch.float32):
+        with torch.autocast(device_type="hpu", dtype=torch.float32):
             context_tokens = self.norm(context_tokens)
         context_tokens = rearrange(context_tokens, "(bz f) m c -> bz f m c", f=video_length)
 

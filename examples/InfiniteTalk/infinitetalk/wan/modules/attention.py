@@ -90,7 +90,7 @@ class FlashAttnV3Gaudi:
                     1 / math.sqrt(query.shape[-1]),
                     False,
                     True,
-                    "fast",
+                    fsdpa_mode,
                     None,  # vsl,
                     "left",
                 )
