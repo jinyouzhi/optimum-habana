@@ -272,8 +272,9 @@ class WanSelfAttention(nn.Module):
         x = x.flatten(2)
         x = self.o(x)
 
-        x_ref_attn_map = None
-
+        with torch.no_grad():
+            x_ref_attn_map = get_attn_map_with_target(q.type_as(x), k.type_as(x), grid_sizes[0],
+                                                      ref_target_masks=ref_target_masks)
         return x, x_ref_attn_map
 
 
@@ -405,7 +406,7 @@ class WanAttentionBlock(nn.Module):
             self.norm_x(x),
             encoder_hidden_states=audio_embedding,
             shape=grid_sizes[0],
-            x_ref_attn_map=None,
+            x_ref_attn_map=x_ref_attn_map,
             human_num=human_num,
         )
         x = x + x_a
