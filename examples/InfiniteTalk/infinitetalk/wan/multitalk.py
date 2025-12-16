@@ -38,10 +38,12 @@ from safetensors.torch import load_file
 from optimum.quanto import quantize, freeze, qint8, requantize
 import optimum.quanto.nn.qlinear as qlinear
 
+import habana_frameworks.torch.core as htcore
 
 def torch_gc():
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
+    htcore.mark_step()
 
 
 def to_param_dtype_fp32only(model, param_dtype):
@@ -81,16 +83,21 @@ def resize_and_centercrop(cond_image, target_size):
         if len(cond_image.shape) == 3:
             cond_image = cond_image[None]
         resized_tensor = nn.functional.interpolate(cond_image, size=(final_h, final_w), mode="nearest").contiguous()
+        htcore.mark_step()
         # crop
         cropped_tensor = transforms.functional.center_crop(resized_tensor, target_size)
+        htcore.mark_step()
         cropped_tensor = cropped_tensor.squeeze(0)
     else:
         resized_image = cond_image.resize((final_w, final_h), resample=Image.BILINEAR)
         resized_image = np.array(resized_image)
         # tensor and crop
         resized_tensor = torch.from_numpy(resized_image)[None, ...].permute(0, 3, 1, 2).contiguous()
+        htcore.mark_step()
         cropped_tensor = transforms.functional.center_crop(resized_tensor, target_size)
+        htcore.mark_step()
         cropped_tensor = cropped_tensor[:, :, None, :, :]
+        htcore.mark_step()
 
     return cropped_tensor
 
@@ -537,11 +544,13 @@ class InfiniteTalkPipeline:
             msk = torch.concat([torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]], dim=1)
             msk = msk.view(1, msk.shape[1] // 4, 4, lat_h, lat_w)
             msk = msk.transpose(1, 2).to(self.param_dtype)  # B 4 T H W
+            htcore.mark_step()
 
             with torch.no_grad():
                 # get clip embedding
                 self.clip.model.to(self.device)
                 clip_context = self.clip.visual(cond_image[:, :, -1:, :, :]).to(self.param_dtype)
+                htcore.mark_step()
                 if offload_model:
                     self.clip.model.cpu()
                 torch_gc()
@@ -554,6 +563,7 @@ class InfiniteTalkPipeline:
                 y = self.vae.encode(padding_frames_pixels_values)
                 y = torch.stack(y).to(self.param_dtype)  # B C T H W
                 cur_motion_frames_latent_num = int(1 + (cur_motion_frames_num - 1) // 4)
+                htcore.mark_step()
 
                 if is_first_clip:
                     latent_motion_frames = self.vae.encode(cond_image)[0]
@@ -582,6 +592,7 @@ class InfiniteTalkPipeline:
                         human_mask[int(x_min) : int(x_max), int(y_min) : int(y_max)] = 1
                         background_mask += human_mask
                         human_masks.append(human_mask)
+                        htcore.mark_step()
                 else:
                     x_min, x_max = int(src_h * face_scale), int(src_h * (1 - face_scale))
                     background_mask = torch.zeros([src_h, src_w])
@@ -595,20 +606,26 @@ class InfiniteTalkPipeline:
                     )
                     human_mask1[x_min:x_max, lefty_min:lefty_max] = 1
                     human_mask2[x_min:x_max, righty_min:righty_max] = 1
+                    htcore.mark_step()
                     background_mask += human_mask1
                     background_mask += human_mask2
                     human_masks = [human_mask1, human_mask2]
                 background_mask = torch.where(background_mask > 0, torch.tensor(0), torch.tensor(1))
                 human_masks.append(background_mask)
+                htcore.mark_step()
 
             ref_target_masks = torch.stack(human_masks, dim=0).to(self.device)
+
             # resize and centercrop for ref_target_masks
             ref_target_masks = resize_and_centercrop(ref_target_masks, (target_h, target_w))
+            htcore.mark_step()
+
 
             _, _, _, lat_h, lat_w = y.shape
             ref_target_masks = F.interpolate(
                 ref_target_masks.unsqueeze(0), size=(lat_h, lat_w), mode="nearest"
             ).squeeze()
+            htcore.mark_step()
             ref_target_masks = ref_target_masks > 0
             ref_target_masks = ref_target_masks.float().to(self.device)
 
@@ -684,6 +701,7 @@ class InfiniteTalkPipeline:
                     add_latent = self.add_noise(latent_motion_frames, motion_add_noise, timesteps[0])
                     _, T_m, _, _ = add_latent.shape
                     latent[:, :T_m] = add_latent
+                htcore.mark_step()
 
                 # infer with APG
                 # refer https://arxiv.org/abs/2410.02416
@@ -695,6 +713,7 @@ class InfiniteTalkPipeline:
                 for i in progress_wrap(range(len(timesteps) - 1)):
                     timestep = timesteps[i]
                     latent[:, :cur_motion_frames_latent_num] = latent_motion_frames
+                    htcore.mark_step()
                     latent_model_input = [latent.to(self.device)]
 
                     # inference with CFG strategy
@@ -758,6 +777,7 @@ class InfiniteTalkPipeline:
                     dt = timesteps[i] - timesteps[i + 1]
                     dt = dt / self.num_timesteps
                     latent = latent + noise_pred * dt[:, None, None, None]
+                    htcore.mark_step()
 
                     # injecting motion frames
                     if not is_first_clip:
@@ -766,10 +786,13 @@ class InfiniteTalkPipeline:
                         add_latent = self.add_noise(latent_motion_frames, motion_add_noise, timesteps[i + 1])
                         _, T_m, _, _ = add_latent.shape
                         latent[:, :T_m] = add_latent
+                    htcore.mark_step()
 
                     latent[:, :cur_motion_frames_latent_num] = latent_motion_frames
+                    htcore.mark_step()
                     x0 = [latent.to(self.device)]
                     del latent_model_input, timestep
+                    htcore.mark_step()
 
                 if offload_model:
                     if not self.vram_management:
@@ -789,6 +812,7 @@ class InfiniteTalkPipeline:
                 gen_video_list.append(videos)
             else:
                 gen_video_list.append(videos[:, :, cur_motion_frames_num:])
+            htcore.mark_step()
 
             # decide whether is done
             if arrive_last_frame:
@@ -799,6 +823,7 @@ class InfiniteTalkPipeline:
             cur_motion_frames_num = motion_frame
 
             cond_frame = videos[:, :, -cur_motion_frames_num:].to(torch.float32).to(self.device)
+            htcore.mark_step()
             audio_start_idx += frame_num - cur_motion_frames_num
             audio_end_idx = audio_start_idx + clip_length
 
@@ -835,11 +860,13 @@ class InfiniteTalkPipeline:
                 dist.barrier()
 
         gen_video_samples = torch.cat(gen_video_list, dim=2)[:, :, : int(max_frames_num)]
+        htcore.mark_step()
         gen_video_samples = gen_video_samples.to(torch.float32)
         if max_frames_num > frame_num and sum(miss_lengths) > 0:
             # split video frames
             # gen_video_samples = gen_video_samples[:, :, :-1*miss_lengths[0]]
             gen_video_samples = gen_video_samples[:, :, : full_audio_emb.shape[0]]
+        htcore.mark_step()
 
         if dist.is_initialized():
             dist.barrier()

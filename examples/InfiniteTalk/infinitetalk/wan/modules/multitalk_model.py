@@ -786,10 +786,12 @@ class WanModel(ModelMixin, ConfigMixin):
         if ref_target_masks is not None:
             ref_target_masks = ref_target_masks.unsqueeze(0).to(torch.float32)
             token_ref_target_masks = nn.functional.interpolate(ref_target_masks, size=(N_h, N_w), mode="nearest")
+            htcore.mark_step()
             token_ref_target_masks = token_ref_target_masks.squeeze(0)
             token_ref_target_masks = token_ref_target_masks > 0
             token_ref_target_masks = token_ref_target_masks.view(token_ref_target_masks.shape[0], -1)
             token_ref_target_masks = token_ref_target_masks.to(x.dtype)
+            htcore.mark_step()
 
         # teacache
         if self.enable_teacache:

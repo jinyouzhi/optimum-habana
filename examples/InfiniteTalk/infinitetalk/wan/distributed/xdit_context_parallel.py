@@ -337,9 +337,11 @@ def usp_dit_forward_multitalk(
     if ref_target_masks is not None:
         ref_target_masks = ref_target_masks.unsqueeze(0).to(torch.float32)
         token_ref_target_masks = nn.functional.interpolate(ref_target_masks, size=(N_h, N_w), mode="nearest")
+        htcore.mark_step()
         token_ref_target_masks = token_ref_target_masks.squeeze(0)
         token_ref_target_masks = token_ref_target_masks > 0
         token_ref_target_masks = token_ref_target_masks.view(token_ref_target_masks.shape[0], -1)
+        htcore.mark_step()
         token_ref_target_masks = token_ref_target_masks.to(x.dtype)
 
     if self.enable_teacache:
@@ -481,8 +483,9 @@ def usp_attn_forward_multitalk(self, x, seq_lens, grid_sizes, freqs, dtype=torch
     q, k, v = qkv_fn(x)
 
     # RoPE
-    q = apply_rotary_pos_emb(q.to(freqs[0].dtype), *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
-    k = apply_rotary_pos_emb(k.to(freqs[0].dtype), *freqs, None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
+    cos, sin = *freqs
+    q = apply_rotary_pos_emb(q.float(), cos.float(), sin.float(), None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
+    k = apply_rotary_pos_emb(k.float(), cos.float(), sin.float(), None, 0, RotaryPosEmbeddingMode.PAIRWISE).type_as(x)
 
     # Context Parallel
     k = get_sp_group().all_gather(k, dim=1)
