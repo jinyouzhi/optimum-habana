@@ -522,6 +522,6 @@ class CLIPModel:
         videos = self.transforms.transforms[-1](videos.mul_(0.5).add_(0.5))
 
         # forward
-        with torch.autocast(device_type="hpu", dtype=self.dtype):
-            out = self.model.visual(videos, use_31_block=True)
-            return out
+        #with torch.autocast(device_type="hpu", dtype=self.dtype):
+        out = self.model.visual(videos.to(self.dtype), use_31_block=True)
+        return out

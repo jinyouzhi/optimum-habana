@@ -289,18 +289,21 @@ def usp_dit_forward_multitalk(
     seq_lens = torch.tensor([u.size(1) for u in x], dtype=torch.long)
     assert seq_lens.max() <= seq_len
     x = torch.cat([torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))], dim=1) for u in x])
+    htcore.mark_step()
 
     # time embeddings
     with torch.autocast(device_type="hpu", dtype=torch.float32):
-        e = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, t).float())
+        e = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, t.float()).float())
         e0 = self.time_projection(e).unflatten(1, (6, self.dim))
         assert e.dtype == torch.float32 and e0.dtype == torch.float32
 
+    htcore.mark_step()
     # context
     context_lens = None
     context = self.text_embedding(
         torch.stack([torch.cat([u, u.new_zeros(self.text_len - u.size(0), u.size(1))]) for u in context])
     )
+    htcore.mark_step()
 
     if clip_fea is not None:
         context_clip = self.img_emb(clip_fea)
@@ -310,17 +313,22 @@ def usp_dit_forward_multitalk(
     audio_cond = audio.to(device=x.device, dtype=x.dtype)
     first_frame_audio_emb_s = audio_cond[:, :1, ...]
     latter_frame_audio_emb = audio_cond[:, 1:, ...]
+    htcore.mark_step()
     latter_frame_audio_emb = rearrange(latter_frame_audio_emb, "b (n_t n) w s c -> b n_t n w s c", n=self.vae_scale)
     middle_index = self.audio_window // 2
     latter_first_frame_audio_emb = latter_frame_audio_emb[:, :, :1, : middle_index + 1, ...]
+    htcore.mark_step()
     latter_first_frame_audio_emb = rearrange(latter_first_frame_audio_emb, "b n_t n w s c -> b n_t (n w) s c")
     latter_last_frame_audio_emb = latter_frame_audio_emb[:, :, -1:, middle_index:, ...]
+    htcore.mark_step()
     latter_last_frame_audio_emb = rearrange(latter_last_frame_audio_emb, "b n_t n w s c -> b n_t (n w) s c")
     latter_middle_frame_audio_emb = latter_frame_audio_emb[:, :, 1:-1, middle_index : middle_index + 1, ...]
+    htcore.mark_step()
     latter_middle_frame_audio_emb = rearrange(latter_middle_frame_audio_emb, "b n_t n w s c -> b n_t (n w) s c")
     latter_frame_audio_emb_s = torch.concat(
         [latter_first_frame_audio_emb, latter_middle_frame_audio_emb, latter_last_frame_audio_emb], dim=2
     )
+    htcore.mark_step()
     audio_embedding = self.audio_proj(first_frame_audio_emb_s, latter_frame_audio_emb_s)
     human_num = len(audio_embedding)
     audio_embedding = torch.concat(audio_embedding.split(1), dim=2).to(x.dtype)
@@ -520,23 +528,31 @@ def sp_crossattn_multi_forward(
     if human_num > 1:
         max_values = x_ref_attn_map.max(1).values[:, None, None]
         min_values = x_ref_attn_map.min(1).values[:, None, None]
+        htcore.mark_step()
         max_min_values = torch.cat([max_values, min_values], dim=2)
         max_min_values = get_sp_group().all_gather(max_min_values, dim=1)
+        htcore.mark_step()
 
         human1_max_value, human1_min_value = max_min_values[0, :, 0].max(), max_min_values[0, :, 1].min()
+        htcore.mark_step()
         human2_max_value, human2_min_value = max_min_values[1, :, 0].max(), max_min_values[1, :, 1].min()
+        htcore.mark_step()
 
         human1 = normalize_and_scale(
             x_ref_attn_map[0], (human1_min_value, human1_max_value), (self.rope_h1[0], self.rope_h1[1])
         )
+        htcore.mark_step()
         human2 = normalize_and_scale(
             x_ref_attn_map[1], (human2_min_value, human2_max_value), (self.rope_h2[0], self.rope_h2[1])
         )
+        htcore.mark_step()
         back = torch.full((x_ref_attn_map.size(1),), self.rope_bak, dtype=human1.dtype).to(human1.device)
         max_indices = x_ref_attn_map.argmax(dim=0)
         normalized_map = torch.stack([human1, human2, back], dim=1)
         normalized_pos = normalized_map[range(x_ref_attn_map.size(1)), max_indices]  # N
+        htcore.mark_step()
         q = self.rope_1d(q, normalized_pos)
+        htcore.mark_step()
 
     q = get_sp_group().all_to_all(q, scatter_dim=1, gather_dim=2)  # [B, H/sp_size, N_t*N_h*N_w, D]
     q = rearrange(q, "B H (N_t S) D -> (B N_t) H S D", N_t=N_t)
@@ -547,12 +563,14 @@ def sp_crossattn_multi_forward(
         torch.matmul(encoder_hidden_states, torch.chunk(self.kv_linear.weight.T, sp_size * 2, dim=1)[sp_rank])
         + torch.chunk(self.kv_linear.bias, sp_size * 2)[sp_rank]
     )  # bias
+    htcore.mark_step()
     encoder_v = (
         torch.matmul(
             encoder_hidden_states, torch.chunk(self.kv_linear.weight.T, sp_size * 2, dim=1)[sp_rank + sp_size]
         )
         + torch.chunk(self.kv_linear.bias, sp_size * 2)[sp_rank + sp_size]
     )
+    htcore.mark_step()
 
     encoder_kv_shape = (N_t, N_a, self.num_heads // sp_size, self.head_dim)
     encoder_k = encoder_k.reshape(encoder_kv_shape).permute(0, 2, 1, 3)  # [N_t, H/sp_size, N_a, D]
@@ -566,7 +584,9 @@ def sp_crossattn_multi_forward(
         audio_tokens_per_frame = 32
         per_frame = torch.zeros(audio_tokens_per_frame * human_num, dtype=encoder_k.dtype).to(encoder_k.device)
         per_frame[:audio_tokens_per_frame] = (self.rope_h1[0] + self.rope_h1[1]) / 2
+        htcore.mark_step()
         per_frame[audio_tokens_per_frame:] = (self.rope_h2[0] + self.rope_h2[1]) / 2
+        htcore.mark_step()
         encoder_pos = per_frame # torch.concat([per_frame] * encoder_k.size(2), dim=0)
         encoder_k = self.rope_1d(encoder_k, encoder_pos)
 

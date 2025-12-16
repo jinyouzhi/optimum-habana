@@ -53,7 +53,7 @@ class FlashAttnV3Gaudi:
         key_len = key.size(-2)
 
         # In the case of cross-attn, use FusedSDPA.
-        if (query_len * cp_size) != key_len:
+        if True or (query_len * cp_size) != key_len:
             output = FusedSDPA.apply(query, key, value, attention_mask, 0.0, False, None, fsdpa_mode, None)
             return output.permute(0, 2, 1, 3).contiguous() if not layout_head_first else output
 
@@ -345,6 +345,7 @@ class SingleStreamAttention(nn.Module):
         encoder_kv_shape = (B, N_a, 2, self.num_heads, self.head_dim)
         encoder_kv = encoder_kv.reshape(encoder_kv_shape).permute((2, 0, 3, 1, 4))
         encoder_k, encoder_v = encoder_kv.unbind(0)
+        htcore.mark_step()
 
         if self.qk_norm:
             encoder_k = self.add_k_norm(encoder_k)
@@ -411,54 +412,76 @@ class SingleStreamMutiAttention(SingleStreamAttention):
 
         N_t, _, _ = shape
         x = rearrange(x, "B (N_t S) C -> (B N_t) S C", N_t=N_t)
+        htcore.mark_step()
 
         # get q for hidden_state
         B, N, C = x.shape
         q = self.q_linear(x)
         q_shape = (B, N, self.num_heads, self.head_dim)
         q = q.reshape(q_shape).permute((0, 2, 1, 3))
+        htcore.mark_step()
 
         if self.qk_norm:
             q = self.q_norm(q)
 
         max_values = x_ref_attn_map.max(1).values[:, None, None]
+        htcore.mark_step()
         min_values = x_ref_attn_map.min(1).values[:, None, None]
+        htcore.mark_step()
         max_min_values = torch.cat([max_values, min_values], dim=2)
+        htcore.mark_step()
 
         human1_max_value, human1_min_value = max_min_values[0, :, 0].max(), max_min_values[0, :, 1].min()
+        htcore.mark_step()
         human2_max_value, human2_min_value = max_min_values[1, :, 0].max(), max_min_values[1, :, 1].min()
+        htcore.mark_step()
 
         human1 = normalize_and_scale(
             x_ref_attn_map[0], (human1_min_value, human1_max_value), (self.rope_h1[0], self.rope_h1[1])
         )
+        htcore.mark_step()
         human2 = normalize_and_scale(
             x_ref_attn_map[1], (human2_min_value, human2_max_value), (self.rope_h2[0], self.rope_h2[1])
         )
+        htcore.mark_step()
         back = torch.full((x_ref_attn_map.size(1),), self.rope_bak, dtype=human1.dtype).to(human1.device)
+        htcore.mark_step()
         max_indices = x_ref_attn_map.argmax(dim=0)
+        htcore.mark_step()
         normalized_map = torch.stack([human1, human2, back], dim=1)
+        htcore.mark_step()
         normalized_pos = normalized_map[range(x_ref_attn_map.size(1)), max_indices]  # N
+        htcore.mark_step()
 
         q = rearrange(q, "(B N_t) H S C -> B H (N_t S) C", N_t=N_t)
+        htcore.mark_step()
         q = self.rope_1d(q, normalized_pos)
+        htcore.mark_step()
         q = rearrange(q, "B H (N_t S) C -> (B N_t) H S C", N_t=N_t)
+        htcore.mark_step()
 
         _, N_a, _ = encoder_hidden_states.shape
         encoder_kv = self.kv_linear(encoder_hidden_states)
         encoder_kv_shape = (B, N_a, 2, self.num_heads, self.head_dim)
         encoder_kv = encoder_kv.reshape(encoder_kv_shape).permute((2, 0, 3, 1, 4))
         encoder_k, encoder_v = encoder_kv.unbind(0)
+        htcore.mark_step()
 
         if self.qk_norm:
             encoder_k = self.add_k_norm(encoder_k)
 
         per_frame = torch.zeros(N_a, dtype=encoder_k.dtype).to(encoder_k.device)
         per_frame[: per_frame.size(0) // 2] = (self.rope_h1[0] + self.rope_h1[1]) / 2
+        htcore.mark_step()
         per_frame[per_frame.size(0) // 2 :] = (self.rope_h2[0] + self.rope_h2[1]) / 2
+        htcore.mark_step()
         encoder_pos = torch.concat([per_frame] * N_t, dim=0)
+        htcore.mark_step()
         encoder_k = rearrange(encoder_k, "(B N_t) H S C -> B H (N_t S) C", N_t=N_t)
         encoder_k = self.rope_1d(encoder_k, encoder_pos)
+        htcore.mark_step()
         encoder_k = rearrange(encoder_k, "B H (N_t S) C -> (B N_t) H S C", N_t=N_t)
+        htcore.mark_step()
 
         x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=True)
         htcore.mark_step()
@@ -466,11 +489,15 @@ class SingleStreamMutiAttention(SingleStreamAttention):
         # linear transform
         x_output_shape = (B, N, C)
         x = x.transpose(1, 2)
+        htcore.mark_step()
         x = x.reshape(x_output_shape)
+        htcore.mark_step()
         x = self.proj(x)
+        htcore.mark_step()
         x = self.proj_drop(x)
 
         # reshape x to origin shape
         x = rearrange(x, "(B N_t) S C -> B (N_t S) C", N_t=N_t)
+        htcore.mark_step()
 
         return x

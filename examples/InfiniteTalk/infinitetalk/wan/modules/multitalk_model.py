@@ -381,8 +381,8 @@ class WanAttentionBlock(nn.Module):
     ):
         dtype = x.dtype
         assert e.dtype == torch.float32
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            e = (self.modulation.to(e.device) + e).chunk(6, dim=1)
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        e = (self.modulation.to(e.device) + e).chunk(6, dim=1)
         assert e[0].dtype == torch.float32
 
         # self-attention
@@ -393,8 +393,8 @@ class WanAttentionBlock(nn.Module):
             freqs,
             ref_target_masks=ref_target_masks,
         )
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            x = x + y * e[2]
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        x = x.float() + y * e[2]
 
         x = x.to(dtype)
 
@@ -412,8 +412,8 @@ class WanAttentionBlock(nn.Module):
         x = x + x_a
 
         y = self.ffn((self.norm2(x).float() * (1 + e[4]) + e[3]).to(dtype))
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            x = x + y * e[5]
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        x = x.float() + y * e[5]
 
         x = x.to(dtype)
 
@@ -443,9 +443,9 @@ class Head(nn.Module):
             e(Tensor): Shape [B, C]
         """
         assert e.dtype == torch.float32
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            e = (self.modulation.to(e.device) + e.unsqueeze(1)).chunk(2, dim=1)
-            x = self.head(self.norm(x) * (1 + e[1]) + e[0])
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        e = (self.modulation.to(e.device) + e.unsqueeze(1)).chunk(2, dim=1)
+        x = self.head(self.norm(x.float()).float() * (1 + e[1]) + e[0])
         return x
 
 
@@ -525,8 +525,8 @@ class AudioProjModel(ModelMixin, ConfigMixin):
         context_tokens = self.proj3(audio_embeds_c).reshape(batch_size_c * N_t, self.context_tokens, self.output_dim)
 
         # normalization and reshape
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            context_tokens = self.norm(context_tokens)
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        context_tokens = self.norm(context_tokens.float())
         context_tokens = rearrange(context_tokens, "(bz f) m c -> bz f m c", f=video_length)
 
         return context_tokens
@@ -746,10 +746,10 @@ class WanModel(ModelMixin, ConfigMixin):
         x = torch.cat([torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))], dim=1) for u in x])
 
         # time embeddings
-        with torch.autocast(device_type="hpu", dtype=torch.float32):
-            e = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, t).float())
-            e0 = self.time_projection(e).unflatten(1, (6, self.dim))
-            assert e.dtype == torch.float32 and e0.dtype == torch.float32
+        #with torch.autocast(device_type="hpu", dtype=torch.float32):
+        e = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, t.float()).float())
+        e0 = self.time_projection(e).unflatten(1, (6, self.dim))
+        assert e.dtype == torch.float32 and e0.dtype == torch.float32
 
         # text embedding
         context_lens = None

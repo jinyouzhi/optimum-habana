@@ -21,6 +21,7 @@ import torchvision
 import binascii
 import os.path as osp
 from skimage import color
+import habana_frameworks.torch.core as htcore
 
 VID_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv")
 ASPECT_RATIO_627 = {
@@ -70,17 +71,22 @@ ASPECT_RATIO_960 = {
 def torch_gc():
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
+    htcore.mark_step()
 
 
 def split_token_counts_and_frame_ids(T, token_frame, world_size, rank):
     S = T * token_frame
     split_sizes = [S // world_size + (1 if i < S % world_size else 0) for i in range(world_size)]
+    htcore.mark_step()
     start = sum(split_sizes[:rank])
+    htcore.mark_step()
     end = start + split_sizes[rank]
+    htcore.mark_step()
     counts = [0] * T
     for idx in range(start, end):
         t = idx // token_frame
         counts[t] += 1
+        htcore.mark_step()
 
     counts_filtered = []
     frame_ids = []
@@ -88,16 +94,21 @@ def split_token_counts_and_frame_ids(T, token_frame, world_size, rank):
         if c > 0:
             counts_filtered.append(c)
             frame_ids.append(t)
+        htcore.mark_step()
     return counts_filtered, frame_ids
 
 
 def normalize_and_scale(column, source_range, target_range, epsilon=1e-8):
+    #print(f"{column.dtype=}, {source_range=}, {target_range=}")
+    orig_dtype=column.dtype
     source_min, source_max = source_range
     new_min, new_max = target_range
 
-    normalized = (column - source_min) / (source_max - source_min + epsilon)
+    normalized = (column.float() - source_min.float()) / (source_max.float() - source_min.float() + epsilon)
+    htcore.mark_step()
     scaled = normalized * (new_max - new_min) + new_min
-    return scaled
+    htcore.mark_step()
+    return scaled.to(orig_dtype)
 
 
 def calculate_x_ref_attn_map(visual_q, ref_k, ref_target_masks, mode="mean", attn_bias=None):
@@ -107,6 +118,7 @@ def calculate_x_ref_attn_map(visual_q, ref_k, ref_target_masks, mode="mean", att
     visual_q = visual_q.transpose(1, 2)
     ref_k = ref_k.transpose(1, 2)
     attn = visual_q @ ref_k.transpose(-2, -1)
+    htcore.mark_step()
 
     if attn_bias is not None:
         attn = attn + attn_bias
@@ -120,6 +132,7 @@ def calculate_x_ref_attn_map(visual_q, ref_k, ref_target_masks, mode="mean", att
     for class_idx, ref_target_mask in enumerate(ref_target_masks):
         torch_gc()
         ref_target_mask = ref_target_mask[None, None, None, ...]
+        htcore.mark_step()
         x_ref_attnmap = x_ref_attn_map_source * ref_target_mask
         x_ref_attnmap = (
             x_ref_attnmap.sum(-1) / ref_target_mask.sum()
@@ -132,6 +145,7 @@ def calculate_x_ref_attn_map(visual_q, ref_k, ref_target_masks, mode="mean", att
             x_ref_attnmap = x_ref_attnmap.max(-1)  # B, x_seqlens
 
         x_ref_attn_maps.append(x_ref_attnmap)
+        htcore.mark_step()
 
     del attn
     del x_ref_attn_map_source
@@ -154,6 +168,7 @@ def get_attn_map_with_target(visual_q, ref_k, shape, ref_target_masks=None, spli
 
     x_seqlens = N_h * N_w
     ref_k = ref_k[:, :x_seqlens]
+    htcore.mark_step()
     _, seq_lens, heads, _ = visual_q.shape
     class_num, _ = ref_target_masks.shape
     x_ref_attn_maps = torch.zeros(class_num, seq_lens).to(visual_q.device).to(visual_q.dtype)
@@ -167,6 +182,7 @@ def get_attn_map_with_target(visual_q, ref_k, shape, ref_target_masks=None, spli
             ref_target_masks,
         )
         x_ref_attn_maps += x_ref_attn_maps_perhead
+        htcore.mark_step()
 
     return x_ref_attn_maps / split_num
 
@@ -192,9 +208,11 @@ class RotaryPositionalEmbedding1D(nn.Module):
         freqs = 1.0 / (
             self.base ** (torch.arange(0, self.head_dim, 2)[: (self.head_dim // 2)].float() / self.head_dim)
         )
+        htcore.mark_step()
         freqs = freqs.to(pos_indices.device)
         freqs = torch.einsum("..., f -> ... f", pos_indices.float(), freqs)
         freqs = repeat(freqs, "... n -> ... (n r)", r=2)
+        htcore.mark_step()
         return freqs
 
     def forward(self, x, pos_indices):
@@ -213,6 +231,7 @@ class RotaryPositionalEmbedding1D(nn.Module):
         freqs_cis = freqs_cis.float().to(x.device)
         cos, sin = freqs_cis.cos(), freqs_cis.sin()
         cos, sin = rearrange(cos, "n d -> 1 1 n d"), rearrange(sin, "n d -> 1 1 n d")
+        htcore.mark_step()
         x_ = (x_ * cos) + (rotate_half(x_) * sin)
 
         return x_.type_as(x)
