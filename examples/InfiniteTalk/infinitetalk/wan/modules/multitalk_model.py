@@ -350,7 +350,7 @@ class WanAttentionBlock(nn.Module):
         self.ffn = nn.Sequential(nn.Linear(dim, ffn_dim), nn.GELU(approximate="tanh"), nn.Linear(ffn_dim, dim))
 
         # modulation
-        self.modulation = nn.Parameter(torch.randn(1, 6, dim) / dim**0.5)
+        self.modulation = nn.Parameter(torch.randn(1, 6, dim, device="cpu") / dim**0.5) # fallback for acc
 
         # init audio module
         self.audio_cross_attn = SingleStreamMutiAttention(
@@ -434,7 +434,7 @@ class Head(nn.Module):
         self.head = nn.Linear(dim, out_dim)
 
         # modulation
-        self.modulation = nn.Parameter(torch.randn(1, 2, dim) / dim**0.5)
+        self.modulation = nn.Parameter(torch.randn(1, 2, dim, device="cpu") / dim**0.5) # fallback for acc
 
     def forward(self, x, e):
         r"""

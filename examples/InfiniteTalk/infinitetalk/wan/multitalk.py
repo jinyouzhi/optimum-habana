@@ -529,7 +529,7 @@ class InfiniteTalkPipeline:
             )
             max_seq_len = int(math.ceil(max_seq_len / self.sp_size)) * self.sp_size
 
-            noise = torch.randn(16, (frame_num - 1) // 4 + 1, lat_h, lat_w, dtype=torch.float32, device=self.device)
+            noise = torch.randn(16, (frame_num - 1) // 4 + 1, lat_h, lat_w, dtype=torch.float32, device="cpu") # fallback for acc
 
             # get mask
             msk = torch.ones(1, frame_num, lat_h, lat_w, device=self.device)
@@ -680,7 +680,7 @@ class InfiniteTalkPipeline:
                 # injecting motion frames
                 if not is_first_clip:
                     latent_motion_frames = latent_motion_frames.to(latent.dtype).to(self.device)
-                    motion_add_noise = torch.randn_like(latent_motion_frames).contiguous()
+                    motion_add_noise = torch.randn_like(latent_motion_frames, device="cpu").contiguous() # fallback for acc
                     add_latent = self.add_noise(latent_motion_frames, motion_add_noise, timesteps[0])
                     _, T_m, _, _ = add_latent.shape
                     latent[:, :T_m] = add_latent
@@ -762,7 +762,7 @@ class InfiniteTalkPipeline:
                     # injecting motion frames
                     if not is_first_clip:
                         latent_motion_frames = latent_motion_frames.to(latent.dtype).to(self.device)
-                        motion_add_noise = torch.randn_like(latent_motion_frames).contiguous()
+                        motion_add_noise = torch.randn_like(latent_motion_frames, device="cpu").contiguous() # fallback for acc
                         add_latent = self.add_noise(latent_motion_frames, motion_add_noise, timesteps[i + 1])
                         _, T_m, _, _ = add_latent.shape
                         latent[:, :T_m] = add_latent
