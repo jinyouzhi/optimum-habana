@@ -571,7 +571,7 @@ def sp_crossattn_multi_forward(
         encoder_k = self.rope_1d(encoder_k, encoder_pos)
 
     # compute attention
-    x = self.fav3.forward(q, encoder_k, encoder_v, layout_head_first=True)
+    x = self.fav3.forward(q, encoder_k, encoder_v, fsdpa_mode="None", layout_head_first=True)
     x = x.permute(0, 2, 1, 3)  # [N_t, N_h*N_w, H/sp_size, D]
     htcore.mark_step()
     # reshape x for all_to_all
