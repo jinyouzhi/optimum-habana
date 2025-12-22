@@ -698,8 +698,6 @@ class InfiniteTalkPipeline:
                     text_momentumbuffer = MomentumBuffer(extra_args.apg_momentum)
                     audio_momentumbuffer = MomentumBuffer(extra_args.apg_momentum)
 
-                # progress_wrap = partial(tqdm, total=len(timesteps) - 1) if progress else (lambda x: x)
-                # for i in progress_wrap(range(len(timesteps) - 1)):
                 for i in range(len(timesteps) - 1):
                     timestep = timesteps[i]
                     latent[:, :cur_motion_frames_latent_num] = latent_motion_frames
