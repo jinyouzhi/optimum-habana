@@ -446,28 +446,17 @@ class InfiniteTalkPipeline:
             original_color_reference = cond_image.clone()
 
         # read audio embeddings
-        audio_embedding_path_1 = input_data["cond_audio"]["person1"]
-        if len(input_data["cond_audio"]) == 1:
-            HUMAN_NUMBER = 1
-            audio_embedding_path_2 = None
-        else:
-            HUMAN_NUMBER = 2
-            audio_embedding_path_2 = input_data["cond_audio"]["person2"]
-
         full_audio_embs = []
-        audio_embedding_paths = [audio_embedding_path_1, audio_embedding_path_2]
+        HUMAN_NUMBER = len(input_data["cond_audio"])
         for human_idx in range(HUMAN_NUMBER):
-            audio_embedding_path = audio_embedding_paths[human_idx]
-            if not os.path.exists(audio_embedding_path):
-                continue
-            full_audio_emb = torch.load(audio_embedding_path)
+            full_audio_emb = input_data["cond_audio"][f"person{human_idx + 1}"]
             if torch.isnan(full_audio_emb).any():
                 continue
             if full_audio_emb.shape[0] <= frame_num:
                 continue
             full_audio_embs.append(full_audio_emb)
 
-        assert len(full_audio_embs) == HUMAN_NUMBER, f"Audio file does not exist, or length is not consistent with the number of frames."
+        assert len(full_audio_embs) == HUMAN_NUMBER, f"Audio length is not consistent with the number of frames."
 
         # preprocess text embedding
         if n_prompt == "":
