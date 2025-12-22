@@ -504,10 +504,14 @@ class InfiniteTalkPipeline:
         torch.backends.cudnn.deterministic = True
 
         sum_frame = min(max_frames_num, len(full_audio_embs[0]))
-        times = 1 + \
-                (1 + (sum_frame - frame_num - 1) // (frame_num - motion_frame))
-        # 1 (first clip length) +
-        # ceil((sum_frame - frame_num) / (frame_num - motion_frame))
+        # Number of generation iterations:
+        #   1 for the first clip, plus the number of subsequent clips needed
+        #   to cover the remaining frames with overlap (motion_frame).
+        # This is equivalent to:
+        #   1 (first clip) + ceil((sum_frame - frame_num) / (frame_num - motion_frame))
+        first_clip_iterations = 1
+        subsequent_clip_iterations = 1 + (sum_frame - frame_num - 1) // (frame_num - motion_frame)
+        times = first_clip_iterations + subsequent_clip_iterations
         progress_bar = tqdm(total=times * sampling_steps) if progress else None
 
         # start video generation iteratively
