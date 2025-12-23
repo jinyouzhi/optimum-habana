@@ -84,6 +84,7 @@ PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 python generate_infinitetalk.py \
 4. **Run on 4 HPUs (Sequence Parallel enabled, Multi-Person):**
 
 ```bash
+PT_HPU_SYNC_LAUNCH=1 \
 PT_HPU_GPU_MIGRATION=1 PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=4 --standalone generate_infinitetalk.py \
     --ckpt_dir  ./weights/Wan2.1-I2V-14B-480P \
     --wav2vec_dir ./weights/chinese-wav2vec2-base \
