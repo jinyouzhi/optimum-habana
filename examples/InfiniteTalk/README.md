@@ -127,14 +127,14 @@ python app.py --cp 8
 
 ## Configuration
 
-| Parameter | Description | Values / Default | Notes |
-|---|---|---|---|
-| `--mode` | Video generation mode | `streaming` (default)<br>`clip` | `streaming` supports continuous long-video generation.<br>`clip` outputs a single chunk. |
-| `--size` | Output video resolution | `infinitetalk-480` (default)<br>`infinitetalk-720` | Supports 480p and 720p. |
-| `--sample_steps` | Sampling steps | `40` | `40` recommended for image-to-video and `50` for text-to-video. |
-| `--max_frame_num` | Maximum number of frames to generate | `1000` (≈ 40s at 25 FPS) |  |
-| `--frame_num` | Number of frames generated per clip | `81` | Must be `4n + 1`. |
-| `--motion_frame` | Driven frame length for long-video generation | `9` |  |
-| `--base_seed` | Random seed | `42` |  |
-| `--offload_model` | Offload model to CPU after each forward pass | `True` | `False` is recommended for HPU. |
-| `--ulysses_size` | Ulysses (sequence parallel) size | `1` (default) | Sequence-parallel degree. |
+| Parameter         | Description                                   | Values / Default             | Notes                                                           |
+|-------------------|-----------------------------------------------|------------------------------|-----------------------------------------------------------------|
+| `--mode`          | Video generation mode                         | `streaming` (default)<br>`clip` | `streaming` supports continuous long-video generation.<br>`clip` outputs a single chunk. |
+| `--size`          | Output video resolution                       | `infinitetalk-480` (default)<br>`infinitetalk-720` | Supports 480p and 720p.                   |
+| `--sample_steps`  | Sampling steps                                | `40`                         | `40` recommended for image-to-video and `50` for text-to-video. |
+| `--max_frame_num` | Maximum number of frames to generate          | `1000` (≈ 40s at 25 FPS)     |                                                                 |
+| `--frame_num`     | Number of frames generated per clip           | `81`                         | Must be `4n + 1`.                                               |
+| `--motion_frame`  | Driven frame length for long-video generation | `9`                          |                                                                 |
+| `--base_seed`     | Random seed                                   | `42`                         |                                                                 |
+| `--offload_model` | Offload model to CPU after each forward pass  | `True`                       | `False` is recommended for HPU.                                 |
+| `--ulysses_size`  | Ulysses (sequence parallel) size              | `1` (default)                | Sequence-parallel degree.                                       |
