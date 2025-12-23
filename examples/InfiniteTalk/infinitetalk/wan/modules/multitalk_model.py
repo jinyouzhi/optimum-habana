@@ -933,21 +933,22 @@ class WanModel(ModelMixin, ConfigMixin):
         Initialize model parameters using Xavier initialization.
         """
 
+        seed_g = torch.Generator(device="cpu") # fallback for acc
         # basic init
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
+                nn.init.xavier_uniform_(m.weight, generator=seed_g)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
         # init embeddings
-        nn.init.xavier_uniform_(self.patch_embedding.weight.flatten(1))
+        nn.init.xavier_uniform_(self.patch_embedding.weight.flatten(1), generator=seed_g)
         for m in self.text_embedding.modules():
             if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, std=0.02)
+                nn.init.normal_(m.weight, std=0.02, generator=seed_g)
         for m in self.time_embedding.modules():
             if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, std=0.02)
+                nn.init.normal_(m.weight, std=0.02, generator=seed_g)
 
         # init output layer
         nn.init.zeros_(self.head.head.weight)
