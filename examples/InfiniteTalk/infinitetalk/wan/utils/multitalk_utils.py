@@ -140,6 +140,7 @@ def calculate_x_ref_attn_map(visual_q, ref_k, ref_target_masks, mode="mean", att
     return torch.concat(x_ref_attn_maps, dim=0)
 
 
+@torch.compiler.disable
 def get_attn_map_with_target(visual_q, ref_k, shape, ref_target_masks=None, split_num=2, enable_sp=False):
     """Args:
     query (torch.tensor): B M H K
