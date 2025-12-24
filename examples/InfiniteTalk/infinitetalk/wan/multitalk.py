@@ -1,6 +1,5 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import gc
-from inspect import ArgSpec
 import logging
 import json
 import math
@@ -486,6 +485,8 @@ class InfiniteTalkPipeline:
 
         # set random seed and init noise
         seed = seed if seed >= 0 else random.randint(0, 99999999)
+        seed_g = torch.Generator(device="cpu")
+        seed_g.manual_seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         np.random.seed(seed)
@@ -530,7 +531,7 @@ class InfiniteTalkPipeline:
             )
             max_seq_len = int(math.ceil(max_seq_len / self.sp_size)) * self.sp_size
 
-            noise = torch.randn(16, (frame_num - 1) // 4 + 1, lat_h, lat_w, dtype=torch.float32, device="cpu") # fallback for acc
+            noise = torch.randn(16, (frame_num - 1) // 4 + 1, lat_h, lat_w, dtype=torch.float32, generator=seed_g, device="cpu") # fallback for acc
 
             # get mask
             msk = torch.ones(1, frame_num, lat_h, lat_w, device=self.device)
